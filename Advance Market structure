@@ -1,0 +1,304 @@
+//@version=5
+indicator("St/Int/Ln-term HLs", shorttitle= "ST/MT/LT H&Ls", overlay = true, max_labels_count = 500, max_bars_back = 5000, max_lines_count = 500)
+
+//user inputs
+lb1 =input.int(10, 'pivots: lookback/forward', tooltip = "larger number for more significant pivot highs / pivot lows")
+useSpikeyCond = input.bool(false, "Apply 'Spikeyness' filter", inline ='2')
+atrMult =input.float(1.3, '|| Spikeyness index', minval = 0, step =0.1, inline ='2', tooltip = "For catching only the 'spiky' pivot highs/pivot lows\n\nIncreasing this number will filter out smooth/unimpressive pivot high&lows\n\nRepresents local ATR multiple for distance from local Moving average a high or low must be\n\nSetting of 1.5 seems optimal on 15m chart with pivot lookback/lookforward = 15")
+confirmOnClose = input.bool(false, "wait 1x bar to confirm (avoid repainting)", inline ='3',tooltip = "default is ON, waits for realtime bar to close before confirming Pivot H/L\n\nToggle this off to get Pivot highs confirmed one bar earlier, but at the cost of sometimes causing repainting")
+int x = confirmOnClose?1:0
+
+showSTHs = input.bool(true, "short-term", inline='1', group = 'pivot highs')
+txtColSTH = input.color(color.rgb(0, 0, 0, 51), "", inline ='1', group = 'pivot highs')
+inputTextStyleSTH = input.string("Ʌ (single)", "Style:", inline='1', group = 'pivot highs', options = ["Ʌ (single)", "text horizontal", "text vertical" ])
+sizeSTH = input.string(size.normal,"Size", options = [size.auto, size.tiny, size.small, size.normal, size.large, size.huge], group = 'pivot highs', inline='1')
+showSTHlines = input.bool(false, "lines", group = 'pivot highs', inline='1')
+showMTHs = input.bool(true, "med-term", inline='2', group = 'pivot highs')
+txtColMTH = input.color(color.rgb(255, 255, 255), "", inline ='2', group = 'pivot highs')
+inputTextStyleMTH = input.string("text horizontal", "Style:", inline='2', group = 'pivot highs', options = ["Ʌ (double)" ,"text horizontal", "text vertical"])
+sizeMTH = input.string(size.normal,"Size", options = [size.auto, size.tiny, size.small, size.normal, size.large, size.huge], group = 'pivot highs', inline='2')
+showMTHlines = input.bool(false, "lines", group = 'pivot highs', inline='2')
+showLTHs = input.bool(true, "long-term", inline='3', group = 'pivot highs')
+txtColLTH = input.color(color.rgb(0, 0, 0), "", inline ='3', group = 'pivot highs')
+inputTextStyleLTH = input.string("text horizontal", "Style:", inline='3', group = 'pivot highs', options = ["Ʌ (triple)","text horizontal", "text vertical" ])
+sizeLTH = input.string(size.large,"Size:", options = [size.auto, size.tiny, size.small, size.normal, size.large, size.huge], group = 'pivot highs', inline='3')
+showLTHlines = input.bool(false, "lines", group = 'pivot highs', inline='3')
+
+showSTLs = input.bool(true, "short-term", inline='1', group = 'pivot lows')
+txtColSTL = input.color(color.rgb(0, 0, 0, 34), "", inline ='1', group = 'pivot lows')
+inputTextStyleSTL = input.string("V (single)", "Style:", inline='1', group = 'pivot lows', options = ["V (single)", "text horizontal", "text vertical" ])
+sizeSTL = input.string(size.normal,"Size", options = [size.auto, size.tiny, size.small, size.normal, size.large, size.huge], group = 'pivot lows', inline='1')
+showSTLlines = input.bool(false, "lines", group = 'pivot lows', inline='1')
+showMTLs = input.bool(true, "med-term", inline='2', group = 'pivot lows')
+txtColMTL = input.color(color.rgb(244, 244, 244), "", inline ='2', group = 'pivot lows')
+inputTextStyleMTL = input.string("text horizontal", "Style:", inline='2', group = 'pivot lows', options = ["V (double)" ,"text horizontal", "text vertical"])
+sizeMTL = input.string(size.normal,"Size", options = [size.auto, size.tiny, size.small, size.normal, size.large, size.huge], group = 'pivot lows', inline='2')
+showMTLlines = input.bool(false, "lines", group = 'pivot lows', inline='2')
+showLTLs = input.bool(true, "long-term", inline='3', group = 'pivot lows')
+txtColLTL = input.color(color.rgb(0, 0, 0), "", inline ='3', group = 'pivot lows')
+inputTextStyleLTL = input.string("text horizontal", "Style:", inline='3', group = 'pivot lows', options = ["V (triple)","text horizontal", "text vertical" ])
+sizeLTL = input.string(size.large,"Size", options = [size.auto, size.tiny, size.small, size.normal, size.large, size.huge], group = 'pivot lows', inline='3')
+showLTLlines = input.bool(false, "lines", group = 'pivot lows', inline='3')
+
+showTable = input.bool(false, "Table", group = "Other Settings", inline ='1' )
+tabPos = input.string(position.top_right, "|| Position:", group = "Other Settings", inline ='1', options = [ position.top_left, position.top_center, position.top_right, position.middle_left, position.middle_center, position.middle_right, position.bottom_left, position.bottom_center, position.bottom_right])
+tabCol = input.color(color.new(color.blue, 60), "|| Bg Color:", group = "Other Settings", inline ='1')
+txtCol = input.color(color.black, "|| txt Color:", group = "Other Settings", inline ='1')
+unit_1 = input.float(0.25, "Label spacer above/below (ATR multiples)",minval = 0, step = 0.25, group = "Other Settings", inline ='2', tooltip = "spacer above/below for pivot labels, based on multiples of long-term average true range")
+lineStyle = input.string(line.style_dotted, "LINES:  | line style", options =[line.style_solid, line.style_dotted, line.style_dashed], group = "Other Settings", inline ='3')
+lineWidth = input.int (1, "line width:", minval =1, maxval =5,group = "Other Settings", inline ='3')
+Showzigzag= input.bool(true, "STH STL zigzags", inline='1', group = 'zigzags')
+atrSpacer = ta.atr(300)
+colorNone=color.new(color.white, 100)
+zigcolor = input.color(color.new(#7c7c7c, 63), "zizagcolor", group ='zigzags')
+string textStyleSTH = switch inputTextStyleSTH 
+    "Ʌ (single)" => "v"
+    "text horizontal" =>  "STH\nʌ"
+    "text vertical" => "S\nT\nH\n."
+string textStyleMTH = switch inputTextStyleMTH 
+    "Ʌ (double)" => "ʌ\nʌ"
+    "text horizontal" =>  "ITH\no"
+    "text vertical" => "I\nT\nH\n."
+string textStyleLTH = switch inputTextStyleLTH 
+    "Ʌ (triple)" => "ʌ\nʌ\nʌ"
+    "text horizontal" =>  "LTH\nO"
+    "text vertical" => "L\nT\nH\n."
+string textStyleSTL = switch inputTextStyleSTL 
+    "V (single)" => "ʌ"
+    "text horizontal" =>  "v\nSTL"
+    "text vertical" => ".\nS\nT\nL"
+string textStyleMTL = switch inputTextStyleMTL 
+    "V (double)" => "v\nv"
+    "text horizontal" =>  "o\nITL"
+    "text vertical" => ".\nI\nT\nL"
+string textStyleLTL = switch inputTextStyleLTL 
+    "V (triple)" => "v\nv\nv"
+    "text horizontal" =>  "O\nLTL"
+    "text vertical" => ".\nL\nT\nL"
+
+pivHigh = ta.pivothigh(high, lb1, lb1)
+pivLow = ta.pivotlow(low, lb1, lb1)
+isPivHigh = na(pivHigh)? false:true
+isPivLow = na(pivLow)? false:true
+
+var float PH = na
+var float PL = na
+var array<float> PHarr = array.new<float>(0)
+var array<float> PLarr = array.new<float>(0)
+
+var label countLabH = na
+var label countLabL = na
+var array<label> countLabHArr = array.new<label>(0)
+var array<label> countLabLArr = array.new<label>(0)
+var int PHbarInd =0
+var int PLbarInd =0
+var array<int>PHbarIndArr=array.new<int>(0)
+var array<int>PLbarIndArr=array.new<int>(0)
+var int MTHbarInd =0
+var int MTLbarInd =0
+var array<int>MTHbarIndArr=array.new<int>(0)
+var array<int>MTLbarIndArr=array.new<int>(0)
+var float MTH = na
+var float MTL = na
+var array<float> MTHarr = array.new<float>(0)
+var array<float> MTLarr = array.new<float>(0)
+var label MTHlab = na
+var label MTLlab = na
+var array<label> MTHlabArr = array.new<label>(0)
+var array<label> MTLlabArr = array.new<label>(0)
+var array<float> LTHarr = array.new<float>(0)
+var array<float> LTLarr = array.new<float>(0)
+
+///~~~~~~ line arrays declared
+var line STHline = na, var array<line> STHlineArr = array.new<line>(0)
+var line STLline = na, var array<line> STLlineArr = array.new<line>(0)
+var line MTHline = na, var array<line> MTHlineArr = array.new<line>(0)
+var line MTLline = na, var array<line> MTLlineArr = array.new<line>(0)
+var line LTHline = na, var array<line> LTHlineArr = array.new<line>(0)
+var line LTLline = na, var array<line> LTLlineArr = array.new<line>(0)
+///~~~~~
+var float themove = na// variable created to plot the zigzag
+var float themove2 = na// variable created to plot the zigzag
+/////#####  PIVOT HIGHS #####
+
+    //spikey condition
+atr = ta.atr(2*lb1)
+maH = ta.sma(high, 2*lb1)
+bool spikeyH = useSpikeyCond? pivHigh > maH+atrMult*atr:true
+    //
+if isPivHigh[x]
+    if spikeyH[x]
+        PH:= pivHigh[x]
+        array.push(PHarr,PH)
+        array.push(PHbarIndArr,bar_index-lb1)
+        countLabH:=label.new(bar_index-(lb1+x), high[lb1+x]+unit_1*atrSpacer, textStyleSTH, style=label.style_label_down, textcolor =showSTHs?txtColSTH:colorNone, size = sizeSTH, color = colorNone)
+        array.push(countLabHArr,countLabH)
+        themove:=high[lb1+x]
+        if showSTHlines
+            STHline:= line.new(bar_index-(lb1+x),high[lb1+x], bar_index, high[lb1+x], color =txtColSTH, style = lineStyle, width =lineWidth)
+            array.push(STHlineArr, STHline)
+PHbarIndArrSize = array.size(PHbarIndArr)         
+PHarrSize = array.size(PHarr)
+
+_lastSTH = array.size(PHarr)>1?array.get(PHarr, PHarrSize-1):na
+_lastBarIndSTH = array.size(PHbarIndArr)>1?array.get(PHbarIndArr, PHbarIndArrSize-1):na
+_2ndLastSTH = array.size(PHarr)>2?array.get(PHarr, PHarrSize-2):na
+_2ndLastBarIndSTH = array.size(PHbarIndArr)>2?array.get(PHbarIndArr, PHbarIndArrSize-2):na
+_3rdLastSTH= array.size(PHarr)>3?array.get(PHarr, PHarrSize-3):na
+_3rdLastBarIndSTH= array.size(PHbarIndArr)>3?array.get(PHbarIndArr, PHbarIndArrSize-3):na
+
+MTH_index = array.indexof(PHbarIndArr, _2ndLastBarIndSTH)
+if (_lastSTH<_2ndLastSTH and _2ndLastSTH>_3rdLastSTH) and not (_lastSTH<_2ndLastSTH and _2ndLastSTH>_3rdLastSTH)[1]
+    MTHlab:=label.new(_2ndLastBarIndSTH-x, _2ndLastSTH+unit_1*atrSpacer, textStyleMTH, style=label.style_label_down, textcolor =showMTHs?txtColMTH:colorNone, size = sizeMTH, color = colorNone)
+    array.push(MTHarr,_2ndLastSTH)
+    array.push(MTHbarIndArr,_2ndLastBarIndSTH)
+    array.push(MTHlabArr, MTHlab)
+    label.set_text(array.get(countLabHArr, MTH_index),"")
+    themove2:=_2ndLastSTH
+    if showMTHlines
+        MTHline:= line.new(_2ndLastBarIndSTH-x,_2ndLastSTH, bar_index, _2ndLastSTH, color =txtColMTH, style = lineStyle, width =lineWidth)
+        array.push(MTHlineArr, MTHline)
+
+MTHbarIndArrSize = array.size(MTHbarIndArr)         
+MTHsizeOfArr = array.size(MTHarr)
+MTHlabArrSize = array.size(MTHlabArr)
+
+_lastMTH = array.size(MTHarr)>1?array.get(MTHarr, MTHsizeOfArr-1):na
+_lastBarIndMTH = array.size(MTHbarIndArr)>1?array.get(MTHbarIndArr, MTHbarIndArrSize-1):na
+_2ndLastMTH = array.size(MTHarr)>2?array.get(MTHarr, MTHsizeOfArr-2):na
+_2ndLastBarIndMTH = array.size(MTHbarIndArr)>2?array.get(MTHbarIndArr, MTHbarIndArrSize-2):na
+_3rdLastMTH= array.size(MTHarr)>3?array.get(MTHarr, MTHsizeOfArr-3):na
+_3rdLastBarIndMTH= array.size(MTHbarIndArr)>3?array.get(MTHbarIndArr, MTHbarIndArrSize-3):na
+
+LTH_index1 = array.indexof(PHbarIndArr, _2ndLastBarIndMTH)
+LTH_index2 = array.indexof(MTHbarIndArr, _2ndLastBarIndMTH)
+if (_lastMTH<_2ndLastMTH and _2ndLastMTH>_3rdLastMTH) and not (_lastMTH<_2ndLastMTH and _2ndLastMTH>_3rdLastMTH)[1] 
+    label.new(_2ndLastBarIndMTH-x, _2ndLastMTH+unit_1*atrSpacer, textStyleLTH, style=label.style_label_down, textcolor =showLTHs?txtColLTH:colorNone, size = sizeLTH, color = colorNone)
+    label.set_text(array.get(MTHlabArr, LTH_index2),"")
+    label.set_text(array.get(countLabHArr, LTH_index1),"")
+    array.push(LTHarr,_2ndLastMTH)
+    if showLTHlines
+        LTHline:= line.new(_2ndLastBarIndMTH-x,_2ndLastMTH, bar_index, _2ndLastMTH, color = txtColLTH, style = lineStyle, width =lineWidth )
+        array.push(LTHlineArr, LTHline)
+
+/////#####  PIVOT LOWS #####
+
+    //spikey condition
+maL = ta.sma(low, 2*lb1)
+bool spikeyL = useSpikeyCond? pivLow < maL-atrMult*atr:true
+    //
+if isPivLow[x]
+    if spikeyL[x]
+        PL:= pivLow[x]
+        array.push(PLarr,PL)
+        array.push(PLbarIndArr,bar_index-lb1)
+        countLabL:=label.new(bar_index-(lb1+x), low[lb1+x]-unit_1*atrSpacer, textStyleSTL, style=label.style_label_up, textcolor =showSTLs?txtColSTL:colorNone, size = sizeSTL, color = colorNone)
+        array.push(countLabLArr,countLabL)
+        themove:=low[lb1+x]
+        if showSTLlines
+            STLline:= line.new(bar_index-(lb1+x),low[lb1+x], bar_index, low[lb1+x], color =txtColSTL, style = lineStyle, width =lineWidth)
+            array.push(STLlineArr, STLline)
+PLbarIndArrSize = array.size(PLbarIndArr)         
+PLarrSize = array.size(PLarr)
+
+_lastSTL = array.size(PLarr)>1?array.get(PLarr, PLarrSize-1):na
+_lastBarIndSTL = array.size(PLbarIndArr)>1?array.get(PLbarIndArr, PLbarIndArrSize-1):na
+_2ndLastSTL = array.size(PLarr)>2?array.get(PLarr, PLarrSize-2):na
+_2ndLastBarIndSTL = array.size(PLbarIndArr)>2?array.get(PLbarIndArr, PLbarIndArrSize-2):na
+_3rdLastSTL= array.size(PLarr)>3?array.get(PLarr, PLarrSize-3):na
+_3rdLastBarIndSTL= array.size(PLbarIndArr)>3?array.get(PLbarIndArr, PLbarIndArrSize-3):na
+
+MTL_index = array.indexof(PLbarIndArr, _2ndLastBarIndSTL)
+if (_lastSTL>_2ndLastSTL and _2ndLastSTL<_3rdLastSTL) and not (_lastSTL>_2ndLastSTL and _2ndLastSTL<_3rdLastSTL)[1] ////  MTLs
+    MTLlab:=label.new(_2ndLastBarIndSTL-x, _2ndLastSTL-unit_1*atrSpacer, textStyleMTL, style=label.style_label_up, textcolor =showMTLs?txtColMTL:colorNone, size = sizeMTL, color = colorNone)
+    array.push(MTLarr,_2ndLastSTL)
+    array.push(MTLbarIndArr,_2ndLastBarIndSTL)
+    array.push(MTLlabArr, MTLlab)
+    label.set_text(array.get(countLabLArr, MTL_index),"")
+    themove2:=_2ndLastSTL
+    if showMTLlines
+        MTLline:= line.new(_2ndLastBarIndSTL-x,_2ndLastSTL, bar_index, _2ndLastSTL, color =txtColMTL, style = lineStyle, width =lineWidth)
+        array.push(MTLlineArr, MTLline)
+
+MTLbarIndArrSize = array.size(MTLbarIndArr)         
+MTLsizeOfArr = array.size(MTLarr)
+MTLlabArrSize = array.size(MTLlabArr)
+
+_lastMTL = array.size(MTLarr)>1?array.get(MTLarr, MTLsizeOfArr-1):na
+_lastBarIndMTL = array.size(MTLbarIndArr)>1?array.get(MTLbarIndArr, MTLbarIndArrSize-1):na
+_2ndLastMTL = array.size(MTLarr)>2?array.get(MTLarr, MTLsizeOfArr-2):na
+_2ndLastBarIndMTL = array.size(MTLbarIndArr)>2?array.get(MTLbarIndArr, MTLbarIndArrSize-2):na
+_3rdLastMTL= array.size(MTLarr)>3?array.get(MTLarr, MTLsizeOfArr-3):na
+_3rdLastBarIndMTL= array.size(MTLbarIndArr)>3?array.get(MTLbarIndArr, MTLbarIndArrSize-3):na
+
+LTL_index1 = array.indexof(PLbarIndArr, _2ndLastBarIndMTL)
+LTL_index2 = array.indexof(MTLbarIndArr, _2ndLastBarIndMTL)
+if (_lastMTL>_2ndLastMTL and _2ndLastMTL<_3rdLastMTL) and not (_lastMTL>_2ndLastMTL and _2ndLastMTL<_3rdLastMTL)[1]  //// LTLs
+    label.new(_2ndLastBarIndMTL-x, _2ndLastMTL-unit_1*atrSpacer, textStyleLTL, style=label.style_label_up, textcolor =showLTLs?txtColLTL:colorNone, size = sizeLTL, color = colorNone)
+    label.set_text(array.get(MTLlabArr, LTL_index2),"")
+    label.set_text(array.get(countLabLArr, LTL_index1),"")
+    array.push(LTLarr,_2ndLastMTL)
+    if showLTLlines
+        LTLline:= line.new(_2ndLastBarIndMTL-x,_2ndLastMTL, bar_index, _2ndLastMTL, color =txtColLTL, style = lineStyle, width =lineWidth)
+        array.push(LTLlineArr, LTLline)
+
+// ~~ Alerts ~~
+lastLTH = array.size(LTHarr)>0?array.last(LTHarr):na
+lastLTL = array.size(LTLarr)>0?array.last(LTLarr):na
+lastMTH = array.size(MTHarr)>0?array.last(MTHarr):na
+lastMTL = array.size(MTLarr)>0?array.last(MTLarr):na
+lastSTH = array.size(PHarr)>0? array.last(PHarr):na
+lastSTL = array.size(PLarr)>0? array.last(PLarr):na
+alertcondition(ta.crossover(close, lastLTH), "LTH, cross above", "price has crossed above last LTH")
+alertcondition(ta.crossunder(close, lastLTL), "LTL, cross below", "price has crossed below last LTL")
+alertcondition(ta.crossover(close, lastMTH), "MTH, cross above", "price has crossed above last MTH")
+alertcondition(ta.crossunder(close, lastMTL), "MTL, cross below", "price has crossed below last MTL")
+alertcondition(ta.crossover(close, lastSTH), "STH, cross above", "price has crossed above last STH")
+alertcondition(ta.crossunder(close, lastSTL), "STL, cross below", "price has crossed below last STL")
+
+///  ~ Display Table ~
+var Table = table.new(tabPos, columns = 3, rows =3, bgcolor = tabCol, border_width = 1)
+if barstate.islast and showTable
+    table.cell(Table, 0, 0, "Long-Term", text_color = txtCol)
+    table.cell(Table, 0, 1, "last LTH = "+str.tostring(lastLTH, format.mintick),bgcolor = color.new(color.orange,70), text_color = txtCol)
+    table.cell(Table, 0, 2, "last LTL = " +str.tostring(lastLTL, format.mintick),bgcolor = color.new(color.orange,70), text_color = txtCol)
+    table.cell(Table, 1, 0, "Med-Term", text_color = txtCol)
+    table.cell(Table, 1, 1, "last MTH = " +str.tostring(lastMTH, format.mintick),bgcolor = color.new(color.yellow,60), text_color = txtCol)
+    table.cell(Table, 1, 2, "last MTL = " +str.tostring(lastMTL, format.mintick),bgcolor = color.new(color.yellow,60), text_color = txtCol)
+    table.cell(Table, 2, 0, "Short-Term", text_color = txtCol)
+    table.cell(Table, 2, 1, "last STH = "+str.tostring(lastSTH, format.mintick),bgcolor = color.new(color.gray,70), text_color = txtCol)
+    table.cell(Table, 2, 2, "last STL = " +str.tostring(lastSTL, format.mintick),bgcolor = color.new(color.gray,70), text_color = txtCol)
+
+///### Adding self-terminating lines
+extendAndRemove( array<line> lineArray,  simple bool isBull, int maxSize) =>  
+    if lineArray.size() > 0
+        for i = lineArray.size() -1 to 0
+            line ln = lineArray.get(i)
+            ln.set_x2(bar_index)
+            float price = ln.get_price(bar_index)                 
+            int m = isBull ? 1 : -1
+            float hiLo = isBull ? high : low  
+            if hiLo * m > price * m 
+                lineArray.remove(i)
+    if lineArray.size() > maxSize
+        line.delete(lineArray.shift())
+
+extendAndRemove(STHlineArr,true, 66) 
+extendAndRemove(STLlineArr,false, 66) 
+extendAndRemove(MTHlineArr,true, 44) 
+extendAndRemove(MTLlineArr,false, 44) 
+extendAndRemove(LTHlineArr,true, 22) 
+extendAndRemove(LTLlineArr,false, 22) 
+
+
+//conecting the dots of the swing highs and lows
+var int lastswindx=0
+plot(Showzigzag and themove!=themove[1]?themove:na, offset=-lb1, color=zigcolor, linewidth=2, style=plot.style_line) //every swing move
+//plot(Showzigzag and themove2!=themove2[1]?themove2:na, offset=-6, color=color.rgb(194, 194, 194, 64), linewidth=2, style=plot.style_line) //every swing move
+if Showzigzag and themove!=themove[1]
+    lastswindx:=lb1
+else 
+    lastswindx:=lastswindx+1    
+var line thewickswing=na
+line.delete(thewickswing[1])
+thewickswing:=line.new(bar_index[lastswindx], themove, bar_index[0], close, color = zigcolor, style=line.style_solid, width = 4)
