@@ -1,0 +1,211 @@
+//@version=5
+indicator("HTFlevelsonLTF", overlay=true)
+//inputs
+HTFenable= input.bool(true, "See HTF in LTF",group = "HTF/LTF range")
+RangeType= input.string("minutes", "HTFtype min/days/weeks/Months?", options =[ "minutes","days","weeks","Months"],group = "HTF/LTF range")
+RangeTF= input.int(1440, "HTF minutes option", 1, 1440,tooltip = "Max valid number is 1440minutes",group = "HTF/LTF range")//HTF min range
+RangeTFday= input.int(1, "HTF Days/Weeks/Months", 1, 365,tooltip = "Max valid numbers are 365Days, 52Weeks, 12Months",group = "HTF/LTF range")//HTF days range
+RangeLTF= input.int(1200, "LTF visibility min", 1, 1440,tooltip = "This is the max timeframe to see the HTF",group = "HTF/LTF range")//LTF range visible
+
+Barcolors= input.bool(true, "Show colored bars",group = "Visualization")
+inside= input.bool(false, "Show insidebars",group = "Visualization")
+buysignals= input.bool(true, "Show Buys arrows",group = "Entries")
+sellsignals= input.bool(true, "Show Sells arrows",group = "Entries")
+showstopsell= input.bool(false, "Show Sl sell",group = "Visualization")
+showstopbuy= input.bool(false, "Show Sl buy",group = "Visualization")
+hlbreaks=input.bool(true, "Show HTF HL breaks",group = "Visualization")
+Showhlhtf=input.bool(true, "Show HTF HL lines",group = "Visualization")
+Showhlhcetf=input.bool(false, "Show HTFwickmid lines",group = "Visualization")
+Showhlext=input.bool(true, "Show HTF HL extensions",group = "Visualization")
+Plotoffset= input.int(0, "Plot-offset",tooltip = "Shift of the HTFplot",group = "Visualization")//LTF range visible
+showalignonly= input.bool(true, "Show only HTF aling entries", group = "Entries")
+
+showpredisonly= input.bool(true, "Show only premium/discount entries", group = "Entries")
+
+
+
+
+//variables
+var float stopvaluebuy=0.0
+var float stopvalueshort=0.0
+var string HTFrequest=""
+var string BIAS=""
+var string biasHTF=""
+var string HTFclose=""
+var bool slbuytaken=false
+var bool slselltaken=false
+var bool insideHTF=false
+var float Midrange=0.0
+var float WickCEhigh=0.0
+var float WickCElow=0.0
+var float exthighHTF=0.0
+var float extlowHTF=0.0
+var float Midrangecurrent=0.0
+var bool HTFHtaken=false
+var bool HTFLtaken=false
+var bool HTFHtakenext=false
+var bool HTFLtakenext=false
+var int trendcounter=0
+//Simple pattern to identify if price is going higher or lower
+longCondition = close>high[1] 
+shortCondition = close<low[1]  
+//bars colors 
+barcolor(longCondition and Barcolors? color.green:shortCondition and Barcolors?color.red :na)
+barcolor(close<=high[1] and close>close[1] and inside and Barcolors? color.rgb(1, 70, 3):close>=low[1] and close<close[1] and inside and Barcolors?color.rgb(82, 0, 0) :Barcolors?color.rgb(0, 0, 0):na)
+
+//Sentiment change
+if longCondition
+    BIAS:="Long"
+else if shortCondition
+    BIAS:="Short"
+
+//recalculating liquidity when is taken
+if high>stopvalueshort
+    slselltaken:=true
+if low<stopvaluebuy
+    slbuytaken:=true
+
+//liquidity levels last high or low after the signal
+if longCondition and barstate.isconfirmed and (BIAS[1]=="Short" or slbuytaken)
+    stopvaluebuy:=low
+    slselltaken:=false
+    slbuytaken:=false
+if shortCondition and barstate.isconfirmed and (BIAS[1]=="Long" or slselltaken)
+    stopvalueshort:=high
+    slselltaken:=false
+    slbuytaken:=false
+
+//HTF requested range is ajusted here for days weeks months or minutes option, be aware of the limits
+if RangeType=="days"
+    HTFrequest:=str.tostring(RangeTFday)+"D"
+else if RangeType=="weeks"  
+    if RangeTFday<=52
+        HTFrequest:=str.tostring(RangeTFday)+"W"
+    else 
+        HTFrequest:="52W"    
+else if RangeType=="Months" 
+    if RangeTFday<=12
+        HTFrequest:=str.tostring(RangeTFday)+"M"
+    else 
+        HTFrequest:="12M" 
+else if RangeType=="minutes"  
+    HTFrequest:=str.tostring(RangeTF) 
+
+//HTF Range previous highs lows and close
+RangeHigh = request.security(syminfo.tickerid, HTFrequest, high[1], lookahead = barmerge.lookahead_on)
+RangeLow = request.security(syminfo.tickerid, HTFrequest, low[1], lookahead = barmerge.lookahead_on )
+RangeClose = request.security(syminfo.tickerid, HTFrequest, close[1], lookahead = barmerge.lookahead_on )
+RangeOpen = request.security(syminfo.tickerid, HTFrequest, open[1], lookahead = barmerge.lookahead_on )
+//Detecting a new HTF range to reset highs or lows taken
+if RangeClose!=RangeClose[1]
+    HTFHtaken:=false
+    HTFLtaken:=false
+
+//HTF 50% calculation
+Midrange:=((RangeHigh-RangeLow)/2)+RangeLow //50% HTF
+ 
+//HTF buy and sell sentiment or inside candle
+if RangeClose>RangeHigh[1]
+    biasHTF:="long"
+    insideHTF:=false
+    trendcounter:=trendcounter+1
+else if RangeClose<RangeLow[1]
+    biasHTF:="short"
+    insideHTF:=false
+    trendcounter:=trendcounter-1
+else if RangeClose>RangeLow[1] and RangeClose<RangeHigh[1] and RangeClose!=RangeClose[1]
+    insideHTF:=true 
+    trendcounter:=0  
+//here we check HTF previous close
+if RangeClose>RangeClose[1]
+    HTFclose:="higher"
+else if RangeClose<RangeClose[1]
+    HTFclose:="lower"
+
+//premium or discount relative to open and 50%
+discount=(not(showpredisonly) or low<Midrange or low<RangeClose)
+premium=(not(showpredisonly) or high>Midrange or high>RangeClose)
+
+//HTF plot visible only in selected lower times or below maximum levels
+visibility=(  (((timeframe.isdaily and timeframe.multiplier<RangeTFday*20) or (timeframe.isweekly and timeframe.multiplier<RangeTFday*4)) and RangeType=="Months")  or ( ((timeframe.isdaily and timeframe.multiplier<RangeTFday*5) or (timeframe.isweekly and timeframe.multiplier<RangeTFday)) and RangeType=="weeks") or (timeframe.multiplier<=RangeLTF and timeframe.isminutes  )) and HTFenable
+Mr=plot(Midrange, title="HTFMidrange", color=biasHTF=="long" and visibility? color.rgb(0, 92, 3,80): biasHTF=="short" and visibility? color.rgb(131, 0, 0,80):na,  linewidth = 2, style = plot.style_circles, offset = Plotoffset)
+Rc=plot(RangeClose,title="HTFclose", color=HTFclose=="higher" and visibility? color.rgb(2, 63, 0, 50):HTFclose=="lower" and visibility? color.rgb(117, 0, 0, 50):na,  linewidth = 2, style = plot.style_cross, offset = Plotoffset)
+Ro=plot(RangeOpen,title="HTFopen", color=HTFclose=="higher" and visibility? color.rgb(2, 63, 0, 50):HTFclose=="lower" and visibility? color.rgb(117, 0, 0, 50):na,  style = plot.style_cross,   linewidth = 1, offset = Plotoffset)
+Rl=plot(RangeLow, color=insideHTF and visibility?color.rgb(255, 255, 255, 50):Showhlhtf and biasHTF=="long"?color.rgb(4, 109, 0, 50):Showhlhtf?color.rgb(3, 3, 3, 50):na,  style = plot.style_cross,   linewidth = 1, offset = Plotoffset)
+Rh=plot(RangeHigh, color=insideHTF and visibility?color.rgb(255, 255, 255, 50):Showhlhtf and biasHTF=="short"?color.rgb(189, 0, 0, 50):Showhlhtf?color.rgb(3, 3, 3, 50):na, style = plot.style_cross,   linewidth = 1, offset = Plotoffset)
+
+//wick 50% calculation depends of the candle close relative to the open
+if RangeClose>RangeOpen
+    WickCEhigh:=((RangeHigh-RangeClose)/2)+RangeClose 
+    WickCElow:=((RangeOpen-RangeLow)/2)+RangeLow 
+else if RangeClose<RangeOpen
+    WickCEhigh:=((RangeHigh-RangeOpen)/2)+RangeOpen 
+    WickCElow:=((RangeClose-RangeLow)/2)+RangeLow 
+else
+    WickCEhigh:=((RangeHigh-RangeOpen)/2)+RangeOpen 
+    WickCElow:=((RangeOpen-RangeLow)/2)+RangeLow 
+
+Rhmid=plot(WickCEhigh, color=insideHTF and visibility and Showhlhcetf ?color.rgb(255, 255, 255, 50):Showhlhcetf and biasHTF=="short"?color.rgb(189, 0, 0, 50):Showhlhcetf ?color.rgb(3, 3, 3, 50):na, style = plot.style_cross,   linewidth = 1, offset = Plotoffset)
+Rlmid=plot(WickCElow, color=insideHTF and visibility and Showhlhcetf ?color.rgb(255, 255, 255, 50):Showhlhcetf and biasHTF=="long"?color.rgb(4, 109, 0, 50):Showhlhcetf ?color.rgb(3, 3, 3, 50):na, style = plot.style_cross,  linewidth = 1, offset = Plotoffset)
+
+
+//Here we detect we are in a consolidation new highs and lows to be taken
+if insideHTF and RangeClose!=RangeClose[1]
+    HTFHtakenext:=false
+    HTFLtakenext:=false
+    if RangeHigh[1]>RangeHigh
+        exthighHTF:=RangeHigh[1]
+    if RangeLow[1]<RangeLow
+        extlowHTF:=RangeLow[1]
+
+//here we get if the highest or lowest was taken
+if RangeHigh>exthighHTF and RangeClose!=RangeClose[1]
+    exthighHTF:=RangeHigh
+    HTFHtakenext:=true
+if (RangeLow<extlowHTF or extlowHTF==0.0)  and RangeClose!=RangeClose[1]
+    extlowHTF:=RangeLow
+    HTFLtakenext:=true
+//here we count the trend to show the extension lines once price expands to keep track of liquidity
+if trendcounter>=3 
+    HTFLtakenext:=false 
+if trendcounter<=-3
+    HTFHtakenext:=false
+ 
+//Showhlext
+Rhext=plot(exthighHTF, color=( RangeHigh<exthighHTF ) and visibility and Showhlext and HTFHtakenext==false?color.rgb(0, 0, 0, 50):na, style = plot.style_linebr,   linewidth = 1)
+Rlext=plot(extlowHTF, color=( RangeLow>extlowHTF) and visibility and Showhlext and HTFLtakenext==false?color.rgb(0, 0, 0, 50):na,  style = plot.style_linebr,   linewidth = 1)
+
+
+//HRF range
+fill(Ro, Rc, color=insideHTF and visibility and HTFclose=="higher"? color.rgb(0, 0, 0, 90): biasHTF=="long" and visibility?color.rgb(14, 133, 3, 90):na)
+fill(Rc, Ro, color=insideHTF and visibility and HTFclose=="lower" ? color.rgb(0, 0, 0, 90): biasHTF=="short" and visibility? color.rgb(133, 3, 3, 90):na)
+//Value zone
+fill(Mr, Rc, visibility and insideHTF ? color.rgb(255, 255, 255, 66):visibility? color.rgb(129, 131, 0, 86):na)
+
+//HTF labels
+labelRangeHigh = label.new( visibility ? bar_index:na , RangeHigh,  text=RangeType=="Months"?'________________P'+str.tostring(RangeTFday)+"M H":RangeType=="weeks"?'________________P'+str.tostring(RangeTFday)+"W H":RangeType=="days"?'________________P'+str.tostring(RangeTFday)+"D H":'________________P'+str.tostring(RangeTF)+"H", color=color.rgb(0, 0, 0, 80), textcolor=color.rgb(0, 0, 0, 80),style=label.style_none, size=size.normal)
+label.delete(labelRangeHigh[1])
+labelRangeLow = label.new( visibility ? bar_index:na , RangeLow,    text=RangeType=="Months"?'________________P'+str.tostring(RangeTFday)+"M L":RangeType=="weeks"?'________________P'+str.tostring(RangeTFday)+"W L":RangeType=="days"?'________________P'+str.tostring(RangeTFday)+"D L":'________________P'+str.tostring(RangeTF)+"L", color=color.rgb(0, 0, 0, 80), textcolor=color.rgb(0, 0, 0, 80),style=label.style_none, size=size.normal)
+label.delete(labelRangeLow[1])
+labelRangeClose = label.new(visibility ? bar_index:na , RangeClose,  text=RangeType=="Months"?'_______________P'+str.tostring(RangeTFday)+"M C":RangeType=="weeks"?'_______________P'+str.tostring(RangeTFday)+"W C":RangeType=="days"?'_______________P'+str.tostring(RangeTFday)+"D C":'_______________P'+str.tostring(RangeTF)+"C", color=color.rgb(0, 0, 0, 80), textcolor=HTFclose=="higher"?color.rgb(0, 92, 3,50):HTFclose=="lower"?color.rgb(131, 0, 0,50):color.rgb(0, 0, 0, 80),style=label.style_none, size=size.normal)
+label.delete(labelRangeClose[1])
+labelRangeOpen = label.new(visibility ? bar_index:na , RangeOpen,  text=RangeType=="Months"?'_______________P'+str.tostring(RangeTFday)+"M O":RangeType=="weeks"?'_______________P'+str.tostring(RangeTFday)+"W O":RangeType=="days"?'_______________P'+str.tostring(RangeTFday)+"D O":'_______________P'+str.tostring(RangeTF)+" O", color=color.rgb(0, 0, 0, 80), textcolor=HTFclose=="higher"?color.rgb(0, 92, 3,50):HTFclose=="lower"?color.rgb(131, 0, 0,50):color.rgb(0, 0, 0, 80),style=label.style_none, size=size.normal)
+label.delete(labelRangeOpen[1])
+labelRange50 = label.new(visibility ? bar_index:na , Midrange,  text='_______________'+" HTF 50%", color=color.rgb(0, 0, 0, 80), textcolor=biasHTF=="long"?color.rgb(0, 92, 3,80):biasHTF=="short"?color.rgb(131, 0, 0,80):color.rgb(0, 0, 0, 80),style=label.style_none, size=size.normal)
+label.delete(labelRange50[1])
+
+//HTF High Low taken
+if high>RangeHigh
+    HTFHtaken:=true
+if low<RangeLow
+    HTFLtaken:=true
+//Ploting the highs and lows taken
+plot(HTFHtaken and HTFHtaken[1]==false and high>RangeHigh and (high>high[1] or high[1]>RangeHigh) and hlbreaks and visibility? high:na, style=plot.style_circles, color=biasHTF=="short"?color.rgb(216, 184, 4, 80):color.rgb(8, 228, 0, 80),  linewidth=10, title='hightaken')
+plot(HTFLtaken and HTFLtaken[1]==false and low<RangeLow and (low<low[1] or low[1]<RangeLow) and hlbreaks and visibility? low:na, style=plot.style_circles, color=biasHTF=="long"?color.rgb(216, 184, 4, 80):color.rgb(216, 4, 50, 80),  linewidth=10, title='lowtaken')
+
+//Arrows entry signals
+plotshape(longCondition and BIAS[1]=="Short" and barstate.isconfirmed and discount and visibility, style=shape.triangleup, location = location.belowbar, color=buysignals and (not(showalignonly) or biasHTF=="long") ?color.rgb(2, 92, 196, 47):na,size =size.tiny)
+plotshape(shortCondition and BIAS[1]=="Long" and barstate.isconfirmed and premium and visibility, style=shape.triangledown, location = location.abovebar, color=sellsignals and (not(showalignonly) or biasHTF=="short")?color.rgb(255, 82, 82, 45):na,size =size.tiny )
+
+//liquidity plot    
+plot(showstopbuy and BIAS=="Long"  and barstate.isconfirmed and visibility?stopvaluebuy:showstopsell and BIAS=="Short"  and barstate.isconfirmed and visibility?stopvalueshort:na, title='sl', color=BIAS=="Long"?color.rgb(143, 253, 0, 47):BIAS=="Short"?color.rgb(255, 115, 0, 46) : na, linewidth=2, style=plot.style_circles)
